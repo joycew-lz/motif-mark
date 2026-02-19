@@ -29,9 +29,38 @@ motif_file_path = args.m
 # report = args.r
 
 #--------------
-# functions
+# classes with instance attributes and methods
 #--------------
 
+class FastaSequence:
+    def __init__(self, header, sequence):
+        self.header = header
+        self.sequence = sequence 
+        self.length = len(sequence)
+        self.exons, self.introns = self._find_regions()  # list of (start, end) tuples for exons and introns in the sequence
+
+    def _find_regions(self):
+        '''
+        Takes a FastaSequence object and returns a list of tuples for the start and end positions of
+        the exons and of the introns in the sequence.
+        Exons are always "sandwiched" between introns, so if the first region is an exon, it starts at position 0 and ends at the start of the first intron. 
+        If the first region is an intron, it starts at position 0 and ends at the start of the first exon. 
+        '''
+        exons = []
+        introns = []
+
+        if self.length == 0:
+            return exons, introns
+        
+        # look at the first character of the sequence to determine if the first region is an exon or intron:
+        if self.sequence[0].isupper():
+            region_type = "exon"
+        else:
+            region_type = "intron"
+        
+
+        return exons, introns
+    
 def read_fasta(fasta_file: str):
     '''
     Reads a FASTA file and return a list of FastaSequence objects, where each object contains the header beginning with ">", 
@@ -63,42 +92,8 @@ def read_fasta(fasta_file: str):
 
     return sequences
 
-#--------------
-# classes
-#--------------
-
 fasta_sequences = read_fasta(fasta_file_path) # List of FastaSequence objects for all sequences in the fasta file
 
-class FastaSequence:
-    def __init__(self, header, sequence):
-        self.header = header
-        self.sequence = sequence 
-        self.length = len(sequence)
-        self.exons = self._find_regions(region_type = "exon")  # list of exons
-        self.introns = self._find_regions(region_type = "intron")   # list of introns
-
-    # Methods:
-    def _find_regions(self, region_type):
-        '''
-        Takes a FastaSequence object and a region type ("exon" or "intron"),
-        and returns a list of tuples for the start and end positions of
-        all the specified regions (exons or introns) in the sequence.
-        Exons are always "sandwiched" between introns, so if the first region is an exon, it starts at position 0 and ends at the start of the first intron. 
-        If the first region is an intron, it starts at position 0 and ends at the start of the first exon. 
-        '''
-        exons = []
-        introns = []
-
-        if self.length == 0:
-            return exons, introns
-        
-        if region_type == "exon":
-            # find exons
-            pass
-        elif region_type == "intron":
-            # find introns
-            pass
-        return exons, introns
 
 class Motif:
     def __init__(self, name, raw_sequence, color):
