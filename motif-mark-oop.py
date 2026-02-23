@@ -71,9 +71,9 @@ class FastaSequence:
             # If we have reached the end of the current region type and we're changing from exon --> intron, or intron --> exon:
             if new_type != current_type:
                 if current_type == "exon":
-                    exons.append((start, i))  # add the exon region's position to the list of exons
+                    exons.append((start, i)) # add the exon region's position to the list of exons
                 if current_type == "intron":
-                    introns.append((start, i))  # add the intron region's position to the list of introns
+                    introns.append((start, i)) # add the intron region's position to the list of introns
                 
                 start = i # update the start position to the current position for the new region type
                 current_type = new_type # update the current region type to the new region type
@@ -124,6 +124,17 @@ def read_fasta(fasta_file: str):
             records.append(FastaSequence(header, ''.join(sequence_lines)))
 
     return records
+
+# Convert FASTA filename to a figure PNG name
+def figure_name(fasta_path):
+    '''
+    Given a FASTA file path, return a PNG filename for the figure
+    with the same file name as the FASTA file (but with a .png extension instead of .fasta or .fa).
+    '''
+    # Get the base file name (without the directory path)
+    output_name = os.path.basename(fasta_path)
+    prefix, ext = os.path.splitext(output_name)
+    return prefix + ".png"
 
 # Map IUPAC codes to regex character classes.
 IUPAC_REGEX = {
@@ -185,11 +196,12 @@ def read_motifs(motif_file: str):
     motifs = []
     # Create a color palette with RGB values ranging from 0.00 to 1.00
     color_palette = [
-        (0.15, 0.40, 1.00),
-        (0.60, 0.80, 1.00),
-        (0.70, 0.40, 0.25),
-        (0.85, 0.60, 0.45),
-        (0.95, 0.90, 0.70),
+        (0.733, 0.843, 0.949), # light blue
+        (0.949, 0.882, 0.729), # yellow
+        (0.784, 0.612, 0.475), # brown
+        (0.949, 0.729, 0.788), # pink
+        (0.796, 0.969, 0.643) # light green
+
     ]
     color_index = 0
 
@@ -233,8 +245,8 @@ def find_motif_locations(record, motifs):
             # MotifLocation object stores the motif match's motif, start position, and end position
             motif_locations.append(MotifLocation(motif, start, end))
 
+    # Return all hits
     return motif_locations
-
 
 # Class to represent a motif match location on a gene sequence
 class MotifLocation:
@@ -245,26 +257,142 @@ class MotifLocation:
         self.motif = motif # Store motif object for this match
         self.start = start # Store match start (0-based)
         self.end = end # Store match end (end-exclusive)
-    
 
-
-
+# Class to build the figure for the gene sequences and motif marks.
 class FigureBuilder:
-    def __init__(self, gene_sequences, motif_locations, width=1000, height=900):
+    def __init__(self, gene_sequences, motif_locations, width=1500, height=900):
         # Store figure width and height
         self.width = width 
         self.height = height
 
         # Create cairo surface and context
-        self.surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, self.width, self.height)  # Instance attribute: create cairo surface
-        self.context = cairo.Context(self.surface)  # Instance attribute: create cairo context
+        self.surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, self.width, self.height)
+        self.context = cairo.Context(self.surface)
 
-        # Store gene sequences and motif locations
-        self.gene_sequences = gene_sequences 
-        self.motifs = motif_locations
+        # Store gene sequences
+        self.gene_sequences = gene_sequences
+        self.motif_locations = motif_locations
 
-    # Methods:
-    # def draw_figure(output_png_path)
+        # Fixed layout constants
+        self.left_margin = 200 # Left margin is larger to allow for gene labels
+        self.right_margin = 60 # Right margin is smaller to allow for more space for the gene sequences
+        self.vertical_margin = 65 # Margin on top and bottom of the figure
+        self.gene_spacing = 150
+        self.exon_height = 50
+
+    # Internal method to draw out the backbone gene line, exon rectangles, and gene labels for the figure,
+    # and then draws motif marks on the gene structure.
+    # Note, this is a public interface method (no underscore) of FigureBuilder that can be called from outside the class.
+    def draw_figure(self, output_png_path):
+        '''
+        Draws gene lines to scale, exon rectangles to scale with the length of an exon, and gene labels.
+        Then, draws motif marks on the gene structure.
+        '''
+        ctx = self.context
+
+        # Set a white background color
+        ctx.set_source_rgb(1, 1, 1)
+        ctx.paint()
+
+        # Set a font
+        ctx.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        ctx.set_font_size(20)
+
+        # Horizontal scaling factor for drawing gene lines
+        max_gene_length = max(sequence.length for sequence in self.gene_sequences) # Longest gene sequence length
+        available_width = self.width - self.left_margin - self.right_margin # Available width for drawing (total width minus margins on both sides)
+        px_per_base = available_width / max_gene_length # Scaling factor to convert from gene sequence length to pixels
+
+        # Draw the gene structure:
+        current_y = self.vertical_margin
+
+        for sequence in self.gene_sequences:
+
+            # Draw intron line, aka backbone gene line, to scale
+            x1 = self.left_margin
+            x2 = self.left_margin + sequence.length * px_per_base
+            ctx.set_source_rgb(0, 0, 0) # black
+            ctx.set_line_width(5)
+            ctx.move_to(x1, current_y) # sets line starting point at the left margin and current y position
+            ctx.line_to(x2, current_y) # sets line ending point at the left margin plus gene length and current y position
+            ctx.stroke()
+
+            # Draw exons as rectangles, to scale
+            for exon_start, exon_end in sequence.exons:
+                exon_x = self.left_margin + exon_start * px_per_base # exon x position is based on exon start position and scaling factor, starting from the left margin
+                exon_y = current_y - self.exon_height/2 # exon y position centered vertically on backbone line
+                exon_width = (exon_end - exon_start) * px_per_base # exon width is based on exon length and scaling factor
+                ctx.set_source_rgb(0, 0, 0) # black
+                ctx.rectangle(exon_x, exon_y, exon_width, self.exon_height)
+                ctx.fill()
+        
+            # Draw the gene label, which is the FASTA sequence header, above the gene structure
+            ctx.set_source_rgb(0, 0, 0) # black
+            ctx.move_to(10, current_y - 32) # position the label to the left of the gene backbone and slightly above
+            ctx.show_text(sequence.header)
+
+            # Draw motifs on the gene structure using the internal method _draw_motif_marks()
+            self._draw_motif_marks(sequence, px_per_base, current_y)
+
+            # Increment y position for the next gene sequence
+            current_y += self.gene_spacing
+        
+        # Draw the figure legend for the motifs on the left, bottom side of the figure using the internal method _draw_legend()
+        # self._draw_legend()
+
+        # Save PNG with a specific name
+        self.surface.write_to_png(output_png_path)
+    
+    # Internal method to draw motif marks on the figure.
+    def _draw_motif_marks(self, sequence, px_per_base, y):
+        '''
+        Draws motif rectangles for a single gene and assign hits to lanes so motif overlaps do not overlap visually on the figure.
+        seq = FastaSequence object
+        px_per_base = scaling factor
+        y = vertical position of the gene line
+        '''
+        ctx = self.context
+
+        # Sort motif matches (hits) by start and then end
+        hits_sorted = sorted(self.motif_locations[sequence.header], key = lambda x: x.start)
+
+        # Store the end position of the last motif mark in each vertical lane, or track
+        tracks = []
+
+        # Constants to later determine the y position for this motif mark, based on stacking it below previous motif marks if there are overlaps!
+        motif_base_height =  self.exon_height # a motif height matches exon rectangle height
+        motif_stacked_height = self.exon_height * 0.5
+        motif_vertical_spacing = 6
+
+        for hit in hits_sorted:
+            # Track if this motif has been placed in a lane yet
+            placed = False
+
+            # Go through each lane:
+            for track_index in range(len(tracks)):
+                if hit.start >= tracks[track_index]:
+                    tracks[track_index] = hit.end
+                    level = track_index
+                    placed = True
+                    break
+            
+            if placed == False:
+                tracks.append(hit.end)
+                level = len(tracks) - 1
+
+            motif_x = self.left_margin + hit.start * px_per_base # motif x position is based on motif start position and scaling factor, starting from the left margin
+            motif_width = (hit.end - hit.start) * px_per_base # motif width is based on motif length and scaling factor
+            
+            if level == 0: # motif centered on the gene bar
+                motif_height = motif_base_height
+                motif_y = y - motif_height/2
+            else:
+                motif_height = motif_stacked_height
+                motif_y = (y + motif_height/2 + (level - 1))
+
+            ctx.set_source_rgb(*hit.motif.color) # set color for this motif, using the color that was assigned to the motif earlier
+            ctx.rectangle(motif_x, motif_y, motif_width, motif_height)
+            ctx.fill()
 
 # Main function:
 def main():
@@ -283,3 +411,14 @@ def main():
     for seq in fasta_sequences:
         motif_locations[seq.header] = find_motif_locations(seq, motifs)
 
+    # Create figure builder instance and draw figure
+    png_name = figure_name(fasta_file_path) 
+    builder = FigureBuilder(fasta_sequences, motif_locations)
+    builder.draw_figure(png_name) # Note, this is a public interface method of FigureBuilder 
+
+# Run main if script is executed
+if __name__ == "__main__":
+    main()
+
+# Run the script as:
+# ./motif-mark-oop.py -f Figure_1.fasta -m Fig_1_motifs.txt
