@@ -5,6 +5,7 @@
 #--------------
 
 import argparse
+from inspect import stack
 import os
 import re
 import cairo
@@ -144,7 +145,7 @@ IUPAC_REGEX = {
     "T": "T",
     "U": "T", # U in RNA should be converted to a T
     "N": "[ACGT]", # Any base
-    "Y": "[CT]", # Pyrimidine
+    "Y": "[CTU]", # Pyrimidine
     "R": "[AG]", # Purine
     "K": "[GT]", # Ketone
     "M": "[AC]", # Amino
@@ -164,8 +165,12 @@ class Motif:
     def __init__(self, raw_sequence, color):
         self.raw_sequence = raw_sequence.strip() # Store motif raw sequence
         self.color = color # Store motif color
-        self.length = len(self.raw_sequence)  # Store motif length
-        self.regex_pattern = self._convert_to_regex()  # Store motif regex pattern as a string
+        self.length = len(self.raw_sequence.strip()) # Store motif length
+        self.regex_pattern = self._convert_to_regex()  # Store motif's regex pattern as a string
+
+        # print("Raw motif:", self.raw_sequence)
+        # print("Regex pattern:", self.regex_pattern)
+        # print()
 
     # Internal method to convert the motif raw sequence to a regex pattern using the IUPAC code dictionary.
     def _convert_to_regex(self):
@@ -175,7 +180,7 @@ class Motif:
         Also, U's in RNA gets converted to a T.
         '''
         # Convert raw sequence to all uppercase.
-        sequence = self.raw_sequence.upper()
+        sequence = self.raw_sequence.upper().strip()
 
         pattern = ""
 
@@ -183,9 +188,10 @@ class Motif:
             if base in IUPAC_REGEX:
                 pattern += IUPAC_REGEX[base]
             else:
-                pattern += base
+                continue
 
         return pattern
+    
 
 # Function to read in a motif file.
 def read_motifs(motif_file: str):
@@ -227,8 +233,8 @@ def find_motif_locations(record, motifs):
     Detects motif matches in a FASTA record's sequence, and returns a list of MotifLocation objects, where each object contains the motif match's motif, start position, and end position.
     Also uses lookahead regex to find overlapping matches.
     '''
-    # Convert raw sequence to all uppercase
-    sequence = record.sequence.upper()
+    # Convert raw sequence to all uppercase and replace all U's with T's, since U in RNA should be treated as T for motif matching
+    sequence = record.sequence.upper().replace("U", "T")
 
     # Store hit
     motif_locations = []
@@ -277,7 +283,7 @@ class FigureBuilder:
         self.left_margin = 200 # Left margin is larger to allow for gene labels
         self.right_margin = 60 # Right margin is smaller to allow for more space for the gene sequences
         self.vertical_margin = 65 # Margin on top and bottom of the figure
-        self.gene_spacing = 150
+        self.gene_spacing = 180
         self.exon_height = 50
 
     # Internal method to draw out the backbone gene line, exon rectangles, and gene labels for the figure,
@@ -346,53 +352,67 @@ class FigureBuilder:
     # Internal method to draw motif marks on the figure.
     def _draw_motif_marks(self, sequence, px_per_base, y):
         '''
-        Draws motif rectangles for a single gene and assign hits to lanes so motif overlaps do not overlap visually on the figure.
+        Draws motif marks for a given gene sequence.
         seq = FastaSequence object
         px_per_base = scaling factor
         y = vertical position of the gene line
         '''
         ctx = self.context
 
-        # Sort motif matches (hits) by start and then end
+        # list of MotifLocation objects for this sequence, which contains the motif match's motif, start position, and end position
+        hits = self.motif_locations[sequence.header]
+
+        # Draw all motif hits on the gene line directly.
+        full_height = self.exon_height
+
+        for hit in hits:
+            motif_x = self.left_margin + hit.start * px_per_base # motif x position is based on motif start position and scaling factor
+            motif_y = y - full_height/2 # motif y position is centered vertically on backbone line
+            motif_width = (hit.end - hit.start) * px_per_base # motif width is based on motif length and scaling factor
+
+            ctx.set_source_rgb(*hit.motif.color)
+            ctx.rectangle(motif_x, motif_y, motif_width, full_height)
+            ctx.fill()
+        
+        # Lane assignment!
+
+        # Sort motif matches (hits) by start position, so that we can draw them in order and stack them properly if there are overlaps
         hits_sorted = sorted(self.motif_locations[sequence.header], key = lambda x: x.start)
-
-        # Store the end position of the last motif mark in each vertical lane, or track
-        tracks = []
-
-        # Constants to later determine the y position for this motif mark, based on stacking it below previous motif marks if there are overlaps!
-        motif_base_height =  self.exon_height # a motif height matches exon rectangle height
-        motif_stacked_height = self.exon_height * 0.5
-        motif_vertical_spacing = 6
+       
+        lanes = [] # list of lanes, where each lane is a list of motif hits that do not overlap with each other
+        lane_ends = [] # list of the last end position for each lane
 
         for hit in hits_sorted:
-            # Track if this motif has been placed in a lane yet
             placed = False
 
-            # Go through each lane:
-            for track_index in range(len(tracks)):
-                if hit.start >= tracks[track_index]:
-                    tracks[track_index] = hit.end
-                    level = track_index
+            for i, last_end in enumerate(lane_ends):
+                # If the hit does not overlap with the last hit in this lane, place it in this lane
+                if hit.start >= last_end:
+                    lanes[i].append(hit)
+                    lane_ends[i] = hit.end
                     placed = True
                     break
             
-            if placed == False:
-                tracks.append(hit.end)
-                level = len(tracks) - 1
+            # If the hit was not placed in any existing lane, create a new lane for it
+            if not placed:
+                lanes.append([hit])
+                lane_ends.append(hit.end)
+        
+        # Paramters for drawing smaller bars below the gene line
+        small_height = 5 # height for lower lanes below the gene line
+        lane_gap = 5 # vertical spacing between lanes
 
-            motif_x = self.left_margin + hit.start * px_per_base # motif x position is based on motif start position and scaling factor, starting from the left margin
-            motif_width = (hit.end - hit.start) * px_per_base # motif width is based on motif length and scaling factor
+        # Draw smaller bars in lanes below the gene line
+        for lane_index, lane in enumerate(lanes):
+            lane_y = y + (lane_index + 1) * (small_height + lane_gap) 
             
-            if level == 0: # motif centered on the gene bar
-                motif_height = motif_base_height
-                motif_y = y - motif_height/2
-            else:
-                motif_height = motif_stacked_height
-                motif_y = (y + motif_height/2 + (level - 1))
+            for hit in lane: 
+                x = self.left_margin + hit.start * px_per_base 
+                width = (hit.end - hit.start) * px_per_base 
 
-            ctx.set_source_rgb(*hit.motif.color) # set color for this motif, using the color that was assigned to the motif earlier
-            ctx.rectangle(motif_x, motif_y, motif_width, motif_height)
-            ctx.fill()
+                ctx.set_source_rgb(*hit.motif.color) 
+                ctx.rectangle(x, lane_y - small_height/2, width, small_height) 
+                ctx.fill()
 
 # Main function:
 def main():
