@@ -362,7 +362,7 @@ class FigureBuilder:
         # list of MotifLocation objects for this sequence, which contains the motif match's motif, start position, and end position
         hits = self.motif_locations[sequence.header]
 
-        # Draw all motif hits on the gene line directly.
+        # -----Draw all motif hits on the gene line directly-----
         full_height = self.exon_height
 
         for hit in hits:
@@ -374,12 +374,12 @@ class FigureBuilder:
             ctx.rectangle(motif_x, motif_y, motif_width, full_height)
             ctx.fill()
         
-        # Lane assignment!
+        # -----Lane assignment so that overlapping motifs are stacked properly-----
 
-        # Sort motif matches (hits) by start position, so that we can draw them in order and stack them properly if there are overlaps
+        # Sort motif matches (hits) by start position
         hits_sorted = sorted(self.motif_locations[sequence.header], key = lambda x: x.start)
        
-        lanes = [] # list of lanes, where each lane is a list of motif hits that do not overlap with each other
+        lanes = [] # list of lanes, where each lane is a list of motif hits that DO NOT overlap with each other
         lane_ends = [] # list of the last end position for each lane
 
         for hit in hits_sorted:
@@ -397,21 +397,25 @@ class FigureBuilder:
             if not placed:
                 lanes.append([hit])
                 lane_ends.append(hit.end)
-        
-        # Paramters for drawing smaller bars below the gene line
-        small_height = 5 # height for lower lanes below the gene line
-        lane_gap = 5 # vertical spacing between lanes
 
-        # Draw smaller bars in lanes below the gene line
+        # -----Draw smaller bars of overlapping motifs under the gene line-----
+
+        # Parameters for drawing smaller bars below the gene line
+        smallmotif_height = 8 # height for lower lanes below the gene line
+        lane_gap = 8 # vertical spacing between lanes
+
         for lane_index, lane in enumerate(lanes):
-            lane_y = y + (lane_index + 1) * (small_height + lane_gap) 
-            
+            # y position for this lane, starting 35 pixels below the gene line (y)
+            # stack each lane evenly downward with the spacing of the height of one WHOLE lane block
+            smallmotif_y_uncentered = y + 35 + lane_index * (smallmotif_height + lane_gap)
+            smallmotif_y = smallmotif_y_uncentered - smallmotif_height/2 # motif y position is centered vertically on the lane's y position
+
             for hit in lane: 
-                x = self.left_margin + hit.start * px_per_base 
-                width = (hit.end - hit.start) * px_per_base 
+                smallmotif_x = self.left_margin + hit.start * px_per_base # motif x position is based on motif start position and scaling factor
+                smallmotif_width = (hit.end - hit.start) * px_per_base # motif width is based on motif length and scaling factor
 
                 ctx.set_source_rgb(*hit.motif.color) 
-                ctx.rectangle(x, lane_y - small_height/2, width, small_height) 
+                ctx.rectangle(smallmotif_x, smallmotif_y, smallmotif_width, smallmotif_height) 
                 ctx.fill()
 
 # Main function:
