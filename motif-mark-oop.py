@@ -126,7 +126,7 @@ def read_fasta(fasta_file: str):
 
     return records
 
-# Convert FASTA filename to a figure PNG name
+# Function to convert a FASTA filename to a figure PNG name.
 def figure_name(fasta_path):
     '''
     Given a FASTA file path, return a PNG filename for the figure
@@ -160,7 +160,7 @@ IUPAC_REGEX = {
 # Class to represent a motif.
 class Motif:
     '''
-    Represents __.
+    Represents a motif and its raw sequence, assigned color, length, and regex pattern.
     '''
     def __init__(self, raw_sequence, color):
         self.raw_sequence = raw_sequence.strip() # Store motif raw sequence
@@ -254,10 +254,10 @@ def find_motif_locations(record, motifs):
     # Return all hits
     return motif_locations
 
-# Class to represent a motif match location on a gene sequence
+# Class to represent a motif match location on a gene sequence.
 class MotifLocation:
     '''
-    Represents one motif match on a gene, with a start position and end position.
+    Represents one motif match on a gene, with a start position and end position stored as well as the motif sequence.
     '''
     def __init__(self, motif, start, end):
         self.motif = motif # Store motif object for this match
@@ -266,6 +266,12 @@ class MotifLocation:
 
 # Class to build the figure for the gene sequences and motif marks.
 class FigureBuilder:
+    '''
+    Represents a figure builder for gene sequences and motif marks along the gene.
+    Introns are represented as a gene line, and exons are represented as black rectangles.
+    Motifs are marked as colored rectangles on the gene structure, with overlapping motifs stacked below the gene line.
+    '''
+
     def __init__(self, gene_sequences, motif_locations, width=1500, height=900):
         # Store figure width and height
         self.width = width 
@@ -287,12 +293,12 @@ class FigureBuilder:
         self.exon_height = 50
 
     # Internal method to draw out the backbone gene line, exon rectangles, and gene labels for the figure,
-    # and then draws motif marks on the gene structure.
+    # and then draws motif marks with overlapping motifs as well.
     # Note, this is a public interface method (no underscore) of FigureBuilder that can be called from outside the class.
     def draw_figure(self, output_png_path):
         '''
         Draws gene lines to scale, exon rectangles to scale with the length of an exon, and gene labels.
-        Then, draws motif marks on the gene structure.
+        Then, draws motif marks on the gene structure with overlapping motifs stacked below the gene line.
         '''
         ctx = self.context
 
@@ -352,7 +358,7 @@ class FigureBuilder:
     # Internal method to draw motif marks on the figure.
     def _draw_motif_marks(self, sequence, px_per_base, y):
         '''
-        Draws motif marks for a given gene sequence.
+        Draws motif marks for a given gene sequence and shows overlapping motifs stacked below the gene line.
         seq = FastaSequence object
         px_per_base = scaling factor
         y = vertical position of the gene line
@@ -385,6 +391,8 @@ class FigureBuilder:
         for hit in hits_sorted:
             placed = False
 
+            # Try to place this hit into an existing lane.
+            # A hit can go into lane i only if its start position is at or after the end of the last hit already in that lane.
             for i, last_end in enumerate(lane_ends):
                 # If the hit does not overlap with the last hit in this lane, place it in this lane
                 if hit.start >= last_end:
@@ -393,7 +401,8 @@ class FigureBuilder:
                     placed = True
                     break
             
-            # If the hit was not placed in any existing lane, create a new lane for it
+            # If the hit was not placed in any existing lane, it overlaps with all of them.
+            # Create a new lane for it
             if not placed:
                 lanes.append([hit])
                 lane_ends.append(hit.end)
