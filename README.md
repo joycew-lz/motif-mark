@@ -10,10 +10,10 @@ Given a FASTA file of DNA sequences and a file containing the sequences of known
 - `motif-mark-oop.py`: Object-oriented program that visualizes motifs along the gene sequences in a FASTA file
 
 # Requirements
-`argparse`
-`os`
-`re`
-`pycairo`
+- `argparse`
+- `os`
+- `re`
+- `pycairo`
 
 # Inputs
 This program requires the following inputs:
