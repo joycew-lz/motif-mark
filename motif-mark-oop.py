@@ -5,7 +5,6 @@
 #--------------
 
 import argparse
-from inspect import stack
 import os
 import re
 import cairo
@@ -16,19 +15,19 @@ import math
 #--------------
 
 def get_args():
-    parser = argparse.ArgumentParser(description="to visualize sequence motifs using pycairo")
+    parser = argparse.ArgumentParser(description="to visualize motif marks along a gene sequence using pycairo")
     parser.add_argument("-f", help="designates file path to the fasta file containing sequences", type=str, required=True)
     parser.add_argument("-m", help="designates file path to the motifs text file, with one motif per line", type=str, required=True)
     return parser.parse_args()
 
 #--------------
-# classes with instance attributes and methods
+# classes with instance attributes and internal methods
 #--------------
 
 # Class to represent a FASTA record.
 class FastaSequence:
     '''
-    Represents one FASTA record's sequence, including the header, raw sequence, length, and exon/intron regions.
+    Represents a FASTA record, including its header, raw sequence, length, and exon/intron regions.
     '''
     def __init__(self, header, sequence):
         self.header = header
@@ -39,10 +38,12 @@ class FastaSequence:
     # Internal method to find exon and intron regions based on capitalization of the sequence
     def _find_regions(self):
         '''
-        Returns two lists of (start, end) tuples for the start and end positions of
-        the exons and of the introns in the sequence.
+        Returns one list each (for exons as well as introns) of (start, end) tuples for the positions of
+        exons and introns in the sequence.
         Exons are always "sandwiched" between introns, so if the first region is an exon, it starts at position 0 and ends at the start of the first intron. 
-        If the first region is an intron, it starts at position 0 and ends at the start of the first exon. 
+        If the first region is an intron, it starts at position 0 and ends at the start of the first exon.
+        Exons are distinguished by uppercase bases. 
+        Introns are lowercase bases.
         '''
         exons = []
         introns = []
@@ -59,7 +60,7 @@ class FastaSequence:
         # Start at position 0 for the first base
         start = 0
 
-        # Loop through the base positions starting at position 1,
+        # Loop through all other base positions in the sequence starting at position 1,
         # and check for changes in capitalization to determine exon and intron boundaries
         for i in range(1, len(self.sequence)):
 
@@ -69,7 +70,7 @@ class FastaSequence:
             else:
                 new_type = "intron"
             
-            # If we have reached the end of the current region type and we're changing from exon --> intron, or intron --> exon:
+            # If we reach the end of the current region type and we're changing from exon --> intron, or intron --> exon:
             if new_type != current_type:
                 if current_type == "exon":
                     exons.append((start, i)) # add the exon region's position to the list of exons
@@ -87,11 +88,11 @@ class FastaSequence:
 
         return exons, introns
 
-# Function to read in a FASTA file.   
+# Function to read in a FASTA file and return a list of FastaSequence class objects.   
 def read_fasta(fasta_file: str):
     '''
     Reads a FASTA file and return a list of FastaSequence objects, where each object contains the header beginning with ">", 
-    the sequence in the following lines, the sequence length, and exons and introns ranges for a single gene sequence.
+    the sequence, the sequence length, and exons and introns ranges.
     Handles multiple-line sequences and preserves capitalization to allow for exon and intron detection.
     '''
     records = []
@@ -110,6 +111,8 @@ def read_fasta(fasta_file: str):
 
                 # If there already is a header, finalize the previous record and add it to the list of records
                 if header is not None:
+                    # Create a FastaSequence object using the header and sequence;
+                    # The FastaSequence constructor also computes the sequence length and exon/intron ranges internally
                     records.append(FastaSequence(header, ''.join(sequence_lines)))
                 
                 # Update header to this new header line and reset sequence lines for the new record
@@ -177,7 +180,8 @@ class Motif:
         '''
         Converts a motif raw sequence to a regex pattern using an IUPAC code dictionary:
         For example, convert a motif like "YGCY" into a regex like "[CT]GC[CT]".
-        Also, U's in RNA gets converted to a T.
+        Also, U's in RNA motifs are mapped to T via the IUPAC dictionary.
+        This is used for finding motif marks along a sequence.
         '''
         # Convert raw sequence to all uppercase.
         sequence = self.raw_sequence.upper().strip()
@@ -188,18 +192,19 @@ class Motif:
             if base in IUPAC_REGEX:
                 pattern += IUPAC_REGEX[base]
             else:
-                continue
+                continue # skip unknown characters not in the IUPAC dictionary
 
         return pattern
-    
 
-# Function to read in a motif file.
+# Function to read in a motif file and return a list of Motif class objects.
 def read_motifs(motif_file: str):
     '''
-    Reads a motif file and returns a list of Motif objects, where each object contains the motif raw sequence, color, and regex pattern.
+    Reads a motif file and returns a list of Motif objects, where each object contains the motif raw sequence, assigned color,
+    length, and regex pattern.
     The motif file should have one motif per line.
     '''
     motifs = []
+
     # Create a color palette with RGB values ranging from 0.00 to 1.00
     color_palette = [
         (0.733, 0.843, 0.949), # light blue
@@ -207,8 +212,8 @@ def read_motifs(motif_file: str):
         (0.784, 0.612, 0.475), # brown
         (0.949, 0.729, 0.788), # pink
         (0.796, 0.969, 0.643) # light green
-
     ]
+
     color_index = 0
 
     with open(motif_file, 'r') as fh:
@@ -223,6 +228,8 @@ def read_motifs(motif_file: str):
             # Increment the color index for the next motif
             color_index += 1
 
+            # Create a Motif object using the raw sequence and assigned color;
+            # The Motif constructor also computes the motif length and regex pattern internally
             motifs.append(Motif(line, color))
     
     return motifs
@@ -230,7 +237,8 @@ def read_motifs(motif_file: str):
 # Function to detect motif matches in a FASTA record's sequence.
 def find_motif_locations(record, motifs):
     '''
-    Detects motif matches in a FASTA record's sequence, and returns a list of MotifLocation objects, where each object contains the motif match's motif, start position, and end position.
+    Detects motif matches in a FASTA record's sequence, and returns a list of MotifLocation objects, where each object contains 
+    the motif match's Motif object, start position, and end position.
     Also uses lookahead regex to find overlapping matches.
     '''
     # Convert raw sequence to all uppercase and replace all U's with T's, since U in RNA should be treated as T for motif matching
@@ -248,16 +256,17 @@ def find_motif_locations(record, motifs):
             start = match.start()
             # End is start + motif length
             end = start + motif.length
-            # MotifLocation object stores the motif match's motif, start position, and end position
+
+            # Create a MotifLocation object that stores the motif match's motif, start position, and end position
             motif_locations.append(MotifLocation(motif, start, end))
 
     # Return all hits
     return motif_locations
 
-# Class to represent a motif match location on a gene sequence.
+# Class to represent a motif match's Motif object and location on a gene sequence.
 class MotifLocation:
     '''
-    Represents one motif match on a gene, with a start position and end position stored as well as the motif sequence.
+    Represents one motif match on a gene, storing the Motif object and the match's start and end positions.
     '''
     def __init__(self, motif, start, end):
         self.motif = motif # Store motif object for this match
@@ -272,7 +281,7 @@ class FigureBuilder:
     Motifs are marked as colored rectangles on the gene structure, with overlapping motifs stacked below the gene line.
     '''
 
-    def __init__(self, gene_sequences, motif_locations, width=1500, height=900):
+    def __init__(self, gene_sequences, motifs, motif_locations, width=1500, height=900):
         # Store figure width and height
         self.width = width 
         self.height = height
@@ -281,15 +290,16 @@ class FigureBuilder:
         self.surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, self.width, self.height)
         self.context = cairo.Context(self.surface)
 
-        # Store gene sequences
+        # Store gene sequences, motifs, motif hits locations
         self.gene_sequences = gene_sequences
+        self.motifs = motifs
         self.motif_locations = motif_locations
 
-        # Fixed layout constants
+        # Fixed entire png file layout constants
         self.left_margin = 200 # Left margin is larger to allow for gene labels
         self.right_margin = 60 # Right margin is smaller to allow for more space for the gene sequences
         self.vertical_margin = 65 # Margin on top and bottom of the figure
-        self.gene_spacing = 180
+        self.gene_spacing = 180 # Space between each gene line
         self.exon_height = 50
 
     # Internal method to draw out the backbone gene line, exon rectangles, and gene labels for the figure,
@@ -316,20 +326,21 @@ class FigureBuilder:
         px_per_base = available_width / max_gene_length # Scaling factor to convert from gene sequence length to pixels
 
         # Draw the gene structure:
-        current_y = self.vertical_margin
+        current_y = self.vertical_margin # Initialize the current y position to start at the vertical margins
 
+        # Loop to draw one gene structure for each record in the FASTA file!:
         for sequence in self.gene_sequences:
 
-            # Draw intron line, aka backbone gene line, to scale
+            # -----Draw intron line, aka backbone gene line, to scale-----
             x1 = self.left_margin
             x2 = self.left_margin + sequence.length * px_per_base
             ctx.set_source_rgb(0, 0, 0) # black
             ctx.set_line_width(5)
             ctx.move_to(x1, current_y) # sets line starting point at the left margin and current y position
-            ctx.line_to(x2, current_y) # sets line ending point at the left margin plus gene length and current y position
+            ctx.line_to(x2, current_y) # sets line ending point at the left margin plus gene length, and current y position
             ctx.stroke()
 
-            # Draw exons as rectangles, to scale
+            # -----Draw exons as rectangles, to scale-----
             for exon_start, exon_end in sequence.exons:
                 exon_x = self.left_margin + exon_start * px_per_base # exon x position is based on exon start position and scaling factor, starting from the left margin
                 exon_y = current_y - self.exon_height/2 # exon y position centered vertically on backbone line
@@ -338,21 +349,21 @@ class FigureBuilder:
                 ctx.rectangle(exon_x, exon_y, exon_width, self.exon_height)
                 ctx.fill()
         
-            # Draw the gene label, which is the FASTA sequence header, above the gene structure
+            # -----Draw the gene label, which is the FASTA sequence header, above the gene structure-----
             ctx.set_source_rgb(0, 0, 0) # black
             ctx.move_to(10, current_y - 32) # position the label to the left of the gene backbone and slightly above
             ctx.show_text(sequence.header)
 
-            # Draw motifs on the gene structure using the internal method _draw_motif_marks()
+            # -----Draw motifs on the gene structure using the internal method _draw_motif_marks()-----
             self._draw_motif_marks(sequence, px_per_base, current_y)
 
-            # Increment y position for the next gene sequence
+            # Increment y position by the space between each gene line for the next gene sequence!
             current_y += self.gene_spacing
         
-        # Draw the figure legend for the motifs on the left, bottom side of the figure using the internal method _draw_legend()
-        # self._draw_legend()
+        # -----Outside the loop, draw the figure legend for the motifs on the left, bottom side of the figure using the internal method _draw_legend()-----
+        self._draw_legend(self.motifs)
 
-        # Save PNG with a specific name
+        # -----Save PNG with a specific name-----
         self.surface.write_to_png(output_png_path)
     
     # Internal method to draw motif marks on the figure.
@@ -427,6 +438,40 @@ class FigureBuilder:
                 ctx.rectangle(smallmotif_x, smallmotif_y, smallmotif_width, smallmotif_height) 
                 ctx.fill()
 
+    # Internal method to draw the figure legend for the motifs on the left, bottom side of the figure.
+    def _draw_legend(self, motifs):
+        '''
+        Draws the figure legend for the motifs on the left, bottom side of the figure.
+        '''
+        ctx = self.context
+
+        # Parameters for legend layout
+        legend_x = 20 # left margin for legend
+        legend_y = self.height - 150 # legend y position (top)
+        box_size = 15 # size of each motif color square
+        legend_spacing = 15 # spacing between motifs
+
+        # Draw the title 
+        ctx.set_source_rgb(0, 0, 0) # black
+        ctx.move_to(legend_x, legend_y - box_size) # leave vertical space between title and first motif text
+        ctx.show_text("Motifs (legend)")
+
+        # Draw out motifs
+        for motif in motifs:
+            color = motif.color
+
+            # Draw the colored square 
+            ctx.set_source_rgb(*color) 
+            ctx.rectangle(legend_x, legend_y, box_size, box_size) 
+            ctx.fill()
+
+            # Draw the motif name
+            ctx.move_to(legend_x + box_size + 10, legend_y + box_size)
+            ctx.show_text(motif.raw_sequence)
+
+            # Move down for next motif square and name entry
+            legend_y += box_size + legend_spacing
+
 # Main function:
 def main():
     # Parse arguments and set global argparse variables:
@@ -440,18 +485,20 @@ def main():
     # Read motifs
     motifs = read_motifs(args.m) # List of Motif objects for all motifs in the motif file
 
+    # Map each sequence header to its list of MotifLocation objects, or motif matches
     motif_locations = {}
-    for seq in fasta_sequences:
-        motif_locations[seq.header] = find_motif_locations(seq, motifs)
+    for record in fasta_sequences:
+        motif_locations[record.header] = find_motif_locations(record, motifs)
 
-    # Create figure builder instance and draw figure
-    png_name = figure_name(fasta_file_path) 
-    builder = FigureBuilder(fasta_sequences, motif_locations)
-    builder.draw_figure(png_name) # Note, this is a public interface method of FigureBuilder 
+    # Create figure builder instance and draw the figure
+    png_name = figure_name(fasta_file_path)
+    builder = FigureBuilder(fasta_sequences, motifs, motif_locations)
+    builder.draw_figure(png_name) # Note, draw_figure() is a public interface method of FigureBuilder
 
 # Run main if script is executed
 if __name__ == "__main__":
     main()
 
+# conda activate my_pycairo (An environment with pycairo and necessary packages installed)
 # Run the script as:
 # ./motif-mark-oop.py -f Figure_1.fasta -m Fig_1_motifs.txt
