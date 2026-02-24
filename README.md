@@ -19,7 +19,7 @@ Given a FASTA file of DNA sequences and a file containing the sequences of known
 This program requires the following inputs:
 
 - FASTA file
-    - The FASTA file (.fasta or .fa) is expected to contain one or more DNA sequences.
+    - The FASTA file (.fasta or .fa) is expected to contain one or more DNA sequences. A FASTA record does not need to be all on one line.
     - Exons are indicated as uppercase nucleotide bases. Introns are indicated as lowercase.
 
 - Motif file
