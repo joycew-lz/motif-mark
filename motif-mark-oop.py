@@ -453,7 +453,7 @@ class FigureBuilder:
         # Draw the title 
         ctx.set_source_rgb(0, 0, 0) # black
         ctx.move_to(legend_x, legend_y - box_size) # leave vertical space between title and first motif text
-        ctx.show_text("Motifs (legend)")
+        ctx.show_text("Motifs Legend")
 
         # Draw out motifs
         for motif in motifs:
