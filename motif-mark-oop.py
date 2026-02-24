@@ -8,7 +8,6 @@ import argparse
 import os
 import re
 import cairo
-import math
 
 #--------------
 # argparse
