@@ -298,7 +298,7 @@ class FigureBuilder:
         self.left_margin = 200 # Left margin is larger to allow for gene labels
         self.right_margin = 60 # Right margin is smaller to allow for more space for the gene sequences
         self.vertical_margin = 65 # Margin on top and bottom of the figure
-        self.gene_spacing = 180 # Space between each gene line
+        self.gene_spacing = 210 # Space between each gene line
         self.exon_height = 50
 
     # Internal method to draw out the backbone gene line, exon rectangles, and gene labels for the figure,
