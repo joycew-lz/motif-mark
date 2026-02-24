@@ -15,7 +15,7 @@ Given a FASTA file of DNA sequences and a file containing the sequences of known
 - `re`
 - `pycairo`
 
-# Inputs
+# Inputs and Assumptions:
 This program requires the following inputs:
 
 - FASTA file
@@ -25,6 +25,10 @@ This program requires the following inputs:
 - Motif file
      - The motif file (.txt) has one motif per line.
      - The IUPAC dictionary indicates how ambiguous nucleotide codes (e.g., Y) are expanded into other character classes for motif matching.
+
+This script identifies protein-binding motifs along pre-mRNA (single-stranded) sequences. Thus, there is no need to consider the strandedness and direction of the nucleotide sequences in the FASTA file. The FASTA file should always match the direction of the motif text file. The reverse complement is also not considered.
+
+Therefore, the FASTA sequences must be provided in the same orientation as the motifs in the motif file.
 
 # Running motif-mark-oop.py
 Use the help option to view all arguments and usage details: `./motif-mark-oop.py -h`
