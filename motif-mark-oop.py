@@ -342,7 +342,7 @@ class FigureBuilder:
             # -----Draw exons as rectangles, to scale-----
             for exon_start, exon_end in sequence.exons:
                 exon_x = self.left_margin + exon_start * px_per_base # exon x position is based on exon start position and scaling factor, starting from the left margin
-                exon_y = current_y - self.exon_height/2 # exon y position centered vertically on backbone line
+                exon_y = current_y - self.exon_height/2 # exon y position is centered vertically on backbone line
                 exon_width = (exon_end - exon_start) * px_per_base # exon width is based on exon length and scaling factor
                 ctx.set_source_rgb(0, 0, 0) # black
                 ctx.rectangle(exon_x, exon_y, exon_width, self.exon_height)
